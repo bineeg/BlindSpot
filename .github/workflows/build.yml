@@ -1,0 +1,52 @@
+name: Build BlindSpot
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # needed to attach the JAR to a Release on tag pushes
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build extension JAR
+        run: |
+          chmod +x ./gradlew
+          ./gradlew jar --no-daemon
+
+      # Downloadable from the workflow run's "Artifacts" section (every build).
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blindspot-extension
+          path: app/build/libs/*.jar
+          if-no-files-found: error
+
+      # On a version tag (e.g. v1.0.0), publish a Release with the JAR attached.
+      - name: Stage release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: cp app/build/libs/app-*.jar "BlindSpot-${GITHUB_REF_NAME}.jar"
+
+      - name: Publish Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: BlindSpot-*.jar
+          generate_release_notes: true
