@@ -15,6 +15,7 @@ class ControlPanelComponent {
     companion object {
         private const val FILTER_ALL = "Show All"
         private const val FILTER_UNVISITED = "Unvisited"
+        private const val FILTER_IGNORED = "Ignored"
     }
 
     val container = JPanel(FlowLayout(FlowLayout.LEFT))
@@ -34,7 +35,7 @@ class ControlPanelComponent {
         toolTipText = "Show the JavaScript file each discovered endpoint was found in."
     }
     private val filterLabel = JLabel("Discovered:")
-    private val filterSelector = JComboBox(arrayOf(FILTER_ALL, FILTER_UNVISITED)).apply {
+    private val filterSelector = JComboBox(arrayOf(FILTER_ALL, FILTER_UNVISITED, FILTER_IGNORED)).apply {
         toolTipText = "Filter the Discovered pane. Visited paths already appear in the left pane."
     }
     private val importButton = JButton("Scan Existing Traffic").apply {
@@ -128,6 +129,9 @@ class ControlPanelComponent {
 
     /** True when the Discovered pane should show only unvisited endpoints. */
     fun isUnvisitedOnly(): Boolean = filterSelector.selectedItem == FILTER_UNVISITED
+
+    /** True when the Discovered pane should show only ignored endpoints. */
+    fun isIgnoredOnly(): Boolean = filterSelector.selectedItem == FILTER_IGNORED
 
     private fun exportSelectedHost() {
         val host = selectedHost()

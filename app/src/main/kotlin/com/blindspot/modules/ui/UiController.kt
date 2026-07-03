@@ -34,6 +34,17 @@ object UiController {
             else controlPanelComponent.removeHost(host)
             rebuildForHost(controlPanelComponent.selectedHost())
         }
+
+        tableComponent.onToggleIgnore = { paths ->
+            val host = controlPanelComponent.selectedHost()
+            if (host != null) {
+                for (path in paths) {
+                    val isCurrentlyIgnored = StorageModule.isIgnored(host, path)
+                    StorageModule.setIgnored(host, path, !isCurrentlyIgnored)
+                }
+                rebuildForHost(host)
+            }
+        }
     }
 
     fun shouldFilterRun(): Boolean = controlPanelComponent.scopeToggle.isSelected
@@ -114,13 +125,18 @@ object UiController {
 
             if (newlyVisited) {
                 tableComponent.addVisitedRow(path) // left pane always lists visited
-                if (controlPanelComponent.isUnvisitedOnly()) {
+                if (controlPanelComponent.isIgnoredOnly()) {
+                    // If not ignored, remove it from the Discovered pane.
+                    if (!StorageModule.isIgnored(host, path)) {
+                        tableComponent.removeDiscoveredRow(path)
+                    }
+                } else if (controlPanelComponent.isUnvisitedOnly()) {
                     // Now visited — drop it from the Discovered pane.
                     tableComponent.removeDiscoveredRow(path)
                 } else {
                     // Proxy-observed path with no JS provenance (source stays blank).
                     if (isNewPath) tableComponent.addDiscoveredRow(path, null)
-                    tableComponent.refresh() // flip the discovered row red → green live
+                    tableComponent.refresh() // flip the discovered row color live
                 }
             }
         }
@@ -132,7 +148,8 @@ object UiController {
             controlPanelComponent.ensureHost(host)
             if (host != controlPanelComponent.selectedHost()) return@invokeLater
             if (isExcluded(path)) return@invokeLater // captured, just hidden by the filter
-            if (controlPanelComponent.isUnvisitedOnly() && StorageModule.isVisited(host, path)) return@invokeLater
+            if (controlPanelComponent.isIgnoredOnly() && !StorageModule.isIgnored(host, path)) return@invokeLater
+            if (controlPanelComponent.isUnvisitedOnly() && (StorageModule.isVisited(host, path) || StorageModule.isIgnored(host, path))) return@invokeLater
             tableComponent.upsertDiscoveredRow(path, StorageModule.getSources(host, path).joinToString(", "))
         }
     }
@@ -150,10 +167,14 @@ object UiController {
             // Apply the exclude list as a view filter over the full captured set.
             val shown = paths.keys.filterNot { isExcluded(it) }
             val visited = shown.filter { paths[it] == true }.sorted()
-            val discoveredPaths = if (controlPanelComponent.isUnvisitedOnly())
-                shown.filter { paths[it] != true }.sorted()
-            else
-                shown.sorted()
+            val discoveredPaths = when {
+                controlPanelComponent.isIgnoredOnly() ->
+                    shown.filter { StorageModule.isIgnored(host, it) }.sorted()
+                controlPanelComponent.isUnvisitedOnly() ->
+                    shown.filter { paths[it] != true && !StorageModule.isIgnored(host, it) }.sorted()
+                else ->
+                    shown.sorted()
+            }
             val discovered = discoveredPaths.map {
                 it to StorageModule.getSources(host, it).joinToString(", ").ifEmpty { null }
             }

@@ -29,6 +29,9 @@ class TableComponent {
     /** The host whose data is currently rendered; drives the color renderer. */
     var currentHost: String? = null
 
+    /** Fired when the user toggles the ignore status of selected paths. */
+    var onToggleIgnore: ((List<String>) -> Unit)? = null
+
     private val leftModel = RefreshableModel(arrayOf("Visited Paths (Proxy Traffic)"))
     private val leftTable = JTable(leftModel)
 
@@ -48,6 +51,34 @@ class TableComponent {
         rightTable.setDefaultRenderer(Any::class.java, customRenderer)
         leftTable.rowSorter = leftSorter
         rightTable.rowSorter = rightSorter
+
+        val popupMenu = JPopupMenu()
+        val ignoreItem = JMenuItem("Toggle Ignore")
+        ignoreItem.addActionListener {
+            val selectedRows = rightTable.selectedRows
+            if (selectedRows.isNotEmpty()) {
+                val paths = selectedRows.map { viewRow ->
+                    val modelRow = rightTable.convertRowIndexToModel(viewRow)
+                    rightModel.getValueAt(modelRow, 0) as String
+                }
+                onToggleIgnore?.invoke(paths)
+            }
+        }
+        popupMenu.add(ignoreItem)
+
+        rightTable.addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mousePressed(e: java.awt.event.MouseEvent) {
+                if (SwingUtilities.isRightMouseButton(e)) {
+                    val row = rightTable.rowAtPoint(e.point)
+                    if (row >= 0) {
+                        if (!rightTable.isRowSelected(row)) {
+                            rightTable.setRowSelectionInterval(row, row)
+                        }
+                    }
+                }
+            }
+        })
+        rightTable.componentPopupMenu = popupMenu
 
         // Draggable divider between the two panels; individual JTable columns
         // remain resizable by dragging their header borders.
@@ -173,7 +204,10 @@ class TableComponent {
             val host = currentHost
 
             if (!isSelected) {
-                if (host != null && StorageModule.isVisited(host, pathValue)) {
+                if (host != null && StorageModule.isIgnored(host, pathValue)) {
+                    cell.background = java.awt.Color(255, 250, 204) // Ignored is Yellow
+                    cell.foreground = java.awt.Color(130, 95, 0)
+                } else if (host != null && StorageModule.isVisited(host, pathValue)) {
                     cell.background = java.awt.Color(220, 245, 220) // Visited is Green
                     cell.foreground = java.awt.Color(0, 100, 0)
                 } else {

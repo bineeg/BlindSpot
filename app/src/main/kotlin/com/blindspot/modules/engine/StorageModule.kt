@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 object StorageModule {
 
     private const val ROOT_KEY = "blindspot.hostMatrix"
+    private const val IGNORED_ROOT_KEY = "blindspot.ignoredMatrix"
     private const val FLUSH_SECONDS = 5L
     private const val SOURCE_DELIMITER = "\n"
 
@@ -36,6 +37,7 @@ object StorageModule {
 
     private val hosts = ConcurrentHashMap<String, ConcurrentHashMap<String, Boolean>>()
     private val sources = ConcurrentHashMap<String, ConcurrentHashMap<String, MutableSet<String>>>()
+    private val ignored = ConcurrentHashMap<String, ConcurrentHashMap<String, Boolean>>()
 
     private var persistence: Persistence? = null
     private val dirty = AtomicBoolean(false)
@@ -70,6 +72,21 @@ object StorageModule {
                         if (set.isNotEmpty()) srcMap[path] = set
                     }
                     if (srcMap.isNotEmpty()) sources[host] = srcMap
+                }
+            }
+        } catch (_: Exception) {
+            // Corrupt/incompatible persisted state — start fresh rather than crash.
+        }
+        try {
+            val ignoredRoot = persistence.extensionData().getChildObject(IGNORED_ROOT_KEY)
+            if (ignoredRoot != null) {
+                for (host in ignoredRoot.childObjectKeys()) {
+                    val hostObj = ignoredRoot.getChildObject(host) ?: continue
+                    val map = ConcurrentHashMap<String, Boolean>()
+                    for (path in hostObj.booleanKeys()) {
+                        map[path] = hostObj.getBoolean(path) ?: false
+                    }
+                    if (map.isNotEmpty()) ignored[host] = map
                 }
             }
         } catch (_: Exception) {
@@ -119,6 +136,18 @@ object StorageModule {
         return hosts[host]?.get(cleanPath) == true
     }
 
+    fun isIgnored(host: String, cleanPath: String): Boolean {
+        return ignored[host]?.get(cleanPath) == true
+    }
+
+    fun setIgnored(host: String, cleanPath: String, isIgn: Boolean) {
+        if (host.isBlank() || cleanPath.isBlank()) return
+        val map = ignored.computeIfAbsent(host) { ConcurrentHashMap() }
+        val previousState = map.put(cleanPath, isIgn)
+        val changed = previousState == null || previousState != isIgn
+        if (changed) dirty.set(true)
+    }
+
     /** All JS files an endpoint was found in (sorted), or empty if proxy-only. */
     fun getSources(host: String, cleanPath: String): List<String> {
         return sources[host]?.get(cleanPath)?.sorted() ?: emptyList()
@@ -135,9 +164,11 @@ object StorageModule {
         if (host == null) {
             hosts.clear()
             sources.clear()
+            ignored.clear()
         } else {
             hosts.remove(host)
             sources.remove(host)
+            ignored.remove(host)
         }
         dirty.set(true)
     }
@@ -164,6 +195,18 @@ object StorageModule {
                 root.setChildObject(host, hostObj)
             }
             p.extensionData().setChildObject(ROOT_KEY, root)
+
+            val ignoredRoot = PersistedObject.persistedObject()
+            for ((host, paths) in ignored) {
+                val hostObj = PersistedObject.persistedObject()
+                for ((path, isIgn) in paths) {
+                    if (isIgn) hostObj.setBoolean(path, true)
+                }
+                if (hostObj.booleanKeys().isNotEmpty()) {
+                    ignoredRoot.setChildObject(host, hostObj)
+                }
+            }
+            p.extensionData().setChildObject(IGNORED_ROOT_KEY, ignoredRoot)
         } catch (_: Exception) {
             dirty.set(true)
         }
