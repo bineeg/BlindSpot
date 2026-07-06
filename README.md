@@ -15,9 +15,11 @@ two side-by-side tables update in real time:
 Color coding on the right panel:
 
 - 🟢 **Green** — discovered *and* visited
-- 🔴 **Red** — discovered but **never visited** → the untested surface worth investigating
+- 🔴 **Red** — naturally discovered (via JS scanner or active traffic) but **never visited**
+- 🟡 **Yellow** — ignored path (via right-click context menu "Toggle Ignore")
+- 🔵 **Blue** — unvisited imported endpoint (loaded from external sources/wordlist)
 
-Rows flip red → green live as you browse to them.
+Rows flip color live as you browse to them (turning green) or toggle ignore status.
 
 Each panel has its own **Search** box that filters the visible rows live
 (case-insensitive substring, across both columns) without changing the stored
@@ -62,7 +64,8 @@ If scope is not configured, in-scope checks may capture little or nothing.
 | **Host** dropdown | Selects which host's map is shown. New hosts appear automatically; the first one auto-selects. |
 | **Exclude** | **Table-view filter only — everything in scope is still captured and persisted.** Comma-separated entries to hide. Dotted entries match as **file extensions** (suffix), e.g. `.json` hides `/x.json` but **not** `/api/jsonify`. Non-dotted entries match as **substrings**, e.g. `/static/` or `analytics` hides anywhere in the path. Editing the field re-applies the filter to the tables live; clearing it reveals everything, so you never miss an endpoint. |
 | **Show Path** | Shows/hides the **Found In (JS Source)** column on the right table — the JavaScript file(s) each endpoint was extracted from. |
-| **Discovered** | Filters the right table: **Show All** (every discovered endpoint) or **Unvisited** (only the red rows — endpoints never hit). Visited paths already appear in the left pane. Under **Unvisited**, a row drops off live the moment you visit it. |
+| **Discovered** | Filters the right table: **Show All** (every discovered endpoint), **Unvisited** (only the red rows — endpoints never hit), **Ignored** (yellow rows), or **Wordlist** (blue rows — unvisited imported endpoints). Visited paths already appear in the left pane. Under **Unvisited** and **Wordlist**, a row drops off live the moment you visit it. |
+| **Load URLs from other sources** | Load list of API endpoints from other URL miner tools (e.g. Katana). File format must contain one entry per line, optionally separating the path and sources with a space. Specifying the JS source path(s) is not strictly necessary, but is recommended for better tracking and provenance mapping in the UI:<br><br>`/api/v1`<br>`/api/v2/d    javascriptsourcefilepath.js, javascriptsourcefilepath2.js`<br><br>Already known/visited paths are skipped; new ones show up in **Blue** on the right table. |
 | **Scan Existing Traffic** | Scans the traffic already in Burp's **Proxy → HTTP history** using the current scope and the same scan pipeline as live capture, and backfills the store. Use it when BlindSpot was loaded *after* you'd already been browsing, so you don't have to re-walk the app. Runs in the background; shows how many items were processed. |
 | **Clear** | Clears the **selected** host's data (or everything if no host is selected) and repaints. |
 | **Export** | Writes the selected host's `visited` / `missing` diff to a JSON file. |
@@ -90,7 +93,7 @@ Requires JDK 21 (the Gradle toolchain will provision one).
 The packaged extension is written to:
 
 ```
-app/build/libs/app-1.0.0.jar
+app/build/libs/app-1.0.2.jar
 ```
 
 The Kotlin standard library is merged into this JAR so it loads standalone.
@@ -98,7 +101,7 @@ The Kotlin standard library is merged into this JAR so it loads standalone.
 ### Install in Burp
 
 **Extensions → Installed → Add** → Extension type **Java** → select
-`app/build/libs/app-1.0.0.jar`.
+`app/build/libs/app-1.0.2.jar`.
 
 ## Project layout
 

@@ -16,6 +16,7 @@ class ControlPanelComponent {
         private const val FILTER_ALL = "Show All"
         private const val FILTER_UNVISITED = "Unvisited"
         private const val FILTER_IGNORED = "Ignored"
+        private const val FILTER_WORDLIST = "Wordlist"
     }
 
     val container = JPanel(FlowLayout(FlowLayout.LEFT))
@@ -35,8 +36,11 @@ class ControlPanelComponent {
         toolTipText = "Show the JavaScript file each discovered endpoint was found in."
     }
     private val filterLabel = JLabel("Discovered:")
-    private val filterSelector = JComboBox(arrayOf(FILTER_ALL, FILTER_UNVISITED, FILTER_IGNORED)).apply {
+    private val filterSelector = JComboBox(arrayOf(FILTER_ALL, FILTER_UNVISITED, FILTER_IGNORED, FILTER_WORDLIST)).apply {
         toolTipText = "Filter the Discovered pane. Visited paths already appear in the left pane."
+    }
+    private val loadWordlistButton = JButton("Load URLs from other sources").apply {
+        toolTipText = "Load list of API endpoints from other URL miner tools"
     }
     private val importButton = JButton("Scan Existing Traffic").apply {
         toolTipText = "Scan the traffic already in Burp's Proxy history (current scope) and backfill BlindSpot. " +
@@ -49,6 +53,8 @@ class ControlPanelComponent {
     var onHostSelected: ((String?) -> Unit)? = null
     /** Fired by view-affecting controls (filters, Show Path) to rebuild the view. */
     var onRefresh: (() -> Unit)? = null
+    /** Fired by Load Wordlist to seed the store from a local file. */
+    var onLoadWordlist: (() -> Unit)? = null
     /** Fired by Import Proxy History to backfill the store from Burp's history. */
     var onImport: (() -> Unit)? = null
     /** Fired by Clear; argument is the host to clear (null = everything). */
@@ -81,6 +87,7 @@ class ControlPanelComponent {
             override fun changedUpdate(e: DocumentEvent) = onRefresh?.invoke() ?: Unit
         })
 
+        loadWordlistButton.addActionListener { onLoadWordlist?.invoke() }
         importButton.addActionListener { onImport?.invoke() }
         clearButton.addActionListener { onClear?.invoke(selectedHost()) }
         exportButton.addActionListener { exportSelectedHost() }
@@ -93,6 +100,7 @@ class ControlPanelComponent {
         container.add(showPathCheckbox)
         container.add(filterLabel)
         container.add(filterSelector)
+        container.add(loadWordlistButton)
         container.add(importButton)
         container.add(clearButton)
         container.add(exportButton)
@@ -132,6 +140,9 @@ class ControlPanelComponent {
 
     /** True when the Discovered pane should show only ignored endpoints. */
     fun isIgnoredOnly(): Boolean = filterSelector.selectedItem == FILTER_IGNORED
+
+    /** True when the Discovered pane should show only wordlist endpoints. */
+    fun isWordlistOnly(): Boolean = filterSelector.selectedItem == FILTER_WORDLIST
 
     private fun exportSelectedHost() {
         val host = selectedHost()

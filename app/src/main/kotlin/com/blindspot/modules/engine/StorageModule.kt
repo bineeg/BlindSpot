@@ -29,6 +29,7 @@ object StorageModule {
 
     private const val ROOT_KEY = "blindspot.hostMatrix"
     private const val IGNORED_ROOT_KEY = "blindspot.ignoredMatrix"
+    private const val WORDLIST_ROOT_KEY = "blindspot.wordlistMatrix"
     private const val FLUSH_SECONDS = 5L
     private const val SOURCE_DELIMITER = "\n"
 
@@ -38,6 +39,7 @@ object StorageModule {
     private val hosts = ConcurrentHashMap<String, ConcurrentHashMap<String, Boolean>>()
     private val sources = ConcurrentHashMap<String, ConcurrentHashMap<String, MutableSet<String>>>()
     private val ignored = ConcurrentHashMap<String, ConcurrentHashMap<String, Boolean>>()
+    private val wordlists = ConcurrentHashMap<String, ConcurrentHashMap<String, Boolean>>()
 
     private var persistence: Persistence? = null
     private val dirty = AtomicBoolean(false)
@@ -92,6 +94,21 @@ object StorageModule {
         } catch (_: Exception) {
             // Corrupt/incompatible persisted state — start fresh rather than crash.
         }
+        try {
+            val wordlistRoot = persistence.extensionData().getChildObject(WORDLIST_ROOT_KEY)
+            if (wordlistRoot != null) {
+                for (host in wordlistRoot.childObjectKeys()) {
+                    val hostObj = wordlistRoot.getChildObject(host) ?: continue
+                    val map = ConcurrentHashMap<String, Boolean>()
+                    for (path in hostObj.booleanKeys()) {
+                        map[path] = hostObj.getBoolean(path) ?: false
+                    }
+                    if (map.isNotEmpty()) wordlists[host] = map
+                }
+            }
+        } catch (_: Exception) {
+            // Corrupt/incompatible persisted state — start fresh rather than crash.
+        }
         flusher.scheduleWithFixedDelay(
             { flushIfDirty() }, FLUSH_SECONDS, FLUSH_SECONDS, TimeUnit.SECONDS
         )
@@ -140,6 +157,33 @@ object StorageModule {
         return ignored[host]?.get(cleanPath) == true
     }
 
+    fun isWordlist(host: String, cleanPath: String): Boolean {
+        return wordlists[host]?.get(cleanPath) == true
+    }
+
+    fun registerWordlistEntry(host: String, cleanPath: String, sourcesList: List<String> = emptyList()): Boolean {
+        if (host.isBlank() || cleanPath.isBlank()) return false
+        val map = hosts.computeIfAbsent(host) { ConcurrentHashMap() }
+        
+        // IF the api already in this do not show
+        if (map.containsKey(cleanPath)) return false
+        
+        // Add as unvisited discovered endpoint
+        map[cleanPath] = false
+        val wlMap = wordlists.computeIfAbsent(host) { ConcurrentHashMap() }
+        val isNew = wlMap.put(cleanPath, true) == null
+        
+        if (sourcesList.isNotEmpty()) {
+            val src = sources.computeIfAbsent(host) { ConcurrentHashMap() }
+            val set = src.computeIfAbsent(cleanPath) { ConcurrentHashMap.newKeySet() }
+            for (s in sourcesList) {
+                if (s.isNotBlank()) set.add(s.trim())
+            }
+        }
+        if (isNew) dirty.set(true)
+        return isNew
+    }
+
     fun setIgnored(host: String, cleanPath: String, isIgn: Boolean) {
         if (host.isBlank() || cleanPath.isBlank()) return
         val map = ignored.computeIfAbsent(host) { ConcurrentHashMap() }
@@ -165,10 +209,12 @@ object StorageModule {
             hosts.clear()
             sources.clear()
             ignored.clear()
+            wordlists.clear()
         } else {
             hosts.remove(host)
             sources.remove(host)
             ignored.remove(host)
+            wordlists.remove(host)
         }
         dirty.set(true)
     }
@@ -207,6 +253,18 @@ object StorageModule {
                 }
             }
             p.extensionData().setChildObject(IGNORED_ROOT_KEY, ignoredRoot)
+
+            val wordlistRoot = PersistedObject.persistedObject()
+            for ((host, paths) in wordlists) {
+                val hostObj = PersistedObject.persistedObject()
+                for ((path, isWl) in paths) {
+                    if (isWl) hostObj.setBoolean(path, true)
+                }
+                if (hostObj.booleanKeys().isNotEmpty()) {
+                    wordlistRoot.setChildObject(host, hostObj)
+                }
+            }
+            p.extensionData().setChildObject(WORDLIST_ROOT_KEY, wordlistRoot)
         } catch (_: Exception) {
             dirty.set(true)
         }

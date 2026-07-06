@@ -210,6 +210,9 @@ class TableComponent {
                 } else if (host != null && StorageModule.isVisited(host, pathValue)) {
                     cell.background = java.awt.Color(220, 245, 220) // Visited is Green
                     cell.foreground = java.awt.Color(0, 100, 0)
+                } else if (host != null && StorageModule.isWordlist(host, pathValue)) {
+                    cell.background = java.awt.Color(220, 230, 255) // Wordlist is Blue
+                    cell.foreground = java.awt.Color(0, 50, 150)
                 } else {
                     cell.background = java.awt.Color(255, 220, 220) // Unvisited is Red
                     cell.foreground = java.awt.Color(150, 0, 0)

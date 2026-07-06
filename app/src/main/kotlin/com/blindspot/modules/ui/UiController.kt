@@ -1,8 +1,10 @@
 package com.blindspot.modules.ui
 
 import com.blindspot.modules.engine.StorageModule
+import com.blindspot.modules.engine.UrlModule
 import java.awt.BorderLayout
 import java.awt.Component
+import javax.swing.JFileChooser
 import javax.swing.JOptionPane
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
@@ -27,6 +29,7 @@ object UiController {
 
         controlPanelComponent.onHostSelected = { host -> rebuildForHost(host) }
         controlPanelComponent.onRefresh = { rebuildForHost(controlPanelComponent.selectedHost()) }
+        controlPanelComponent.onLoadWordlist = { runWordlistLoad() }
         controlPanelComponent.onImport = { runHistoryImport() }
         controlPanelComponent.onClear = { host ->
             StorageModule.clear(host)
@@ -86,6 +89,58 @@ object UiController {
         historyImporter = block
     }
 
+    private fun runWordlistLoad() {
+        val host = controlPanelComponent.selectedHost()
+        if (host == null) {
+            JOptionPane.showMessageDialog(mainPanel, "Please select or visit a host first before loading a wordlist.")
+            return
+        }
+
+        val chooser = JFileChooser()
+        if (chooser.showOpenDialog(mainPanel) != JFileChooser.APPROVE_OPTION) return
+        val file = chooser.selectedFile ?: return
+
+        Thread({
+            var addedCount = 0
+            var skippedCount = 0
+            try {
+                file.forEachLine { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.isEmpty()) return@forEachLine
+                    
+                    // Split path and sources by the first whitespace character (space or tab)
+                    val parts = trimmed.split(Regex("\\s+"), limit = 2)
+                    val rawPath = parts[0].trim()
+                    val sourcesList = if (parts.size > 1) {
+                        parts[1].split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                    } else {
+                        emptyList()
+                    }
+
+                    val cleanPath = UrlModule.normalizePath(rawPath)
+                    val result = StorageModule.registerWordlistEntry(host, cleanPath, sourcesList)
+                    if (result) {
+                        addedCount++
+                    } else {
+                        skippedCount++
+                    }
+                }
+                
+                SwingUtilities.invokeLater {
+                    rebuildForHost(controlPanelComponent.selectedHost())
+                    JOptionPane.showMessageDialog(
+                        mainPanel,
+                        "URLs loaded for $host:\n- Added $addedCount new endpoints\n- Skipped $skippedCount already known/visited endpoints"
+                    )
+                }
+            } catch (e: Exception) {
+                SwingUtilities.invokeLater {
+                    JOptionPane.showMessageDialog(mainPanel, "Error loading endpoints: ${e.message}")
+                }
+            }
+        }, "blindspot-wordlist-load").apply { isDaemon = true }.start()
+    }
+
     private fun runHistoryImport() {
         val importer = historyImporter ?: return
         controlPanelComponent.setImportBusy(true)
@@ -133,6 +188,9 @@ object UiController {
                 } else if (controlPanelComponent.isUnvisitedOnly()) {
                     // Now visited — drop it from the Discovered pane.
                     tableComponent.removeDiscoveredRow(path)
+                } else if (controlPanelComponent.isWordlistOnly()) {
+                    // Now visited — drop it from the Discovered pane.
+                    tableComponent.removeDiscoveredRow(path)
                 } else {
                     // Proxy-observed path with no JS provenance (source stays blank).
                     if (isNewPath) tableComponent.addDiscoveredRow(path, null)
@@ -150,6 +208,7 @@ object UiController {
             if (isExcluded(path)) return@invokeLater // captured, just hidden by the filter
             if (controlPanelComponent.isIgnoredOnly() && !StorageModule.isIgnored(host, path)) return@invokeLater
             if (controlPanelComponent.isUnvisitedOnly() && (StorageModule.isVisited(host, path) || StorageModule.isIgnored(host, path))) return@invokeLater
+            if (controlPanelComponent.isWordlistOnly() && (!StorageModule.isWordlist(host, path) || StorageModule.isVisited(host, path) || StorageModule.isIgnored(host, path))) return@invokeLater
             tableComponent.upsertDiscoveredRow(path, StorageModule.getSources(host, path).joinToString(", "))
         }
     }
@@ -171,7 +230,9 @@ object UiController {
                 controlPanelComponent.isIgnoredOnly() ->
                     shown.filter { StorageModule.isIgnored(host, it) }.sorted()
                 controlPanelComponent.isUnvisitedOnly() ->
-                    shown.filter { paths[it] != true && !StorageModule.isIgnored(host, it) }.sorted()
+                    shown.filter { paths[it] != true && !StorageModule.isIgnored(host, it) && !StorageModule.isWordlist(host, it) }.sorted()
+                controlPanelComponent.isWordlistOnly() ->
+                    shown.filter { StorageModule.isWordlist(host, it) && paths[it] != true && !StorageModule.isIgnored(host, it) }.sorted()
                 else ->
                     shown.sorted()
             }
